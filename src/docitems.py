@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterable
+from itertools import chain
 from pathlib import Path
 
 
@@ -67,25 +69,43 @@ class DocItem:
 
 
 class PackageItem(DocItem):
-    def __init__(self, pth: Path, rootpath: Path | None = None):
+
+    @staticmethod
+    def get_lines(f: Iterable[str]) -> Iterable[str]:
+        for line in f:
+            if not line.startswith('%'):
+                break
+            yield line[1:-1].rstrip()
+
+    def __init__(self, pth: Path, rootpath: Path | None = None) -> None:
         if rootpath is None:
             rootpath = pth.parent
         packs = []
         funcs = []
+        cls = []
         self.id = self.make_name(rootpath, pth)
         self.name = pth.stem
         self.descr = pth.name.upper()
         for f in pth.iterdir():
+            fpath = pth / f
             if f.is_dir():
-                packs.append(PackageItem(pth / f, rootpath))
+                packs.append(PackageItem(fpath, rootpath))
             elif f.is_file() and f.suffix == '.m':
-                item = FunctionItem(pth / f)
-                if f.name == 'Contents.m':
-                    self.descr = item.descr
-                else:
-                    funcs.append(item)
+                with f.open("rt") as ff:
+                    line = next(ff)
+                    lines = self.get_lines(ff)
+                    if line.startswith('%'):
+                        item = ScriptItem(fpath.stem, chain([line], lines))
+                        if f.name == 'Contents.m':
+                            self.descr = item.descr
+                    elif "function" in line:
+                        funcs.append(FunctionItem(fpath.stem, lines))
+                    elif "class" in line:
+                        cls.append(ClassItem(fpath.stem, lines))
+
         self.subpackages = packs
         self.functions = funcs
+        self.classes = cls
 
     def generate(self, dest=None, recursive: bool = None):
         def gen(file):
@@ -98,6 +118,13 @@ class PackageItem(DocItem):
                 _directive("rubric", "Modules", [], [], file=file)
                 tbl = ((make_label(p.name), p.descr) for p in self.subpackages)
                 _table(":ref:", tbl, file=file)
+
+            if self.classes:
+                _directive("rubric", "Classes", [], [], file=file)
+                _table(":class:", ((f.name, f.descr) for f in self.functions), file=file)
+                for f in self.classes:
+                    contents = ("".join(("| ", line)) for line in f.contents)
+                    _directive("py:class", f.name, [], contents, file=file)
 
             if self.functions:
                 _directive("rubric", "Functions", [], [], file=file)
@@ -118,26 +145,24 @@ class PackageItem(DocItem):
                 p.generate(dest, recursive=recursive)
 
 
-class FunctionItem(DocItem):
-    def __init__(self, pth: Path):
-
-        def get_lines(f):
-            for line in f:
-                if not line.startswith('%'):
-                    break
-                yield line[1:-1]
-
-        self.name = pth.stem
-        with pth.open("rt") as f:
-            line = next(f)
-            if not line.startswith('%'):
-                line = next(f)
-            self.descr=line[1:].strip()
-            self.contents = list(get_lines(f))
-
-    def h1(self, line: str):
-        return line[1:].strip()
+class FileItem(DocItem):
+    def __init__(self, name: str, contents: Iterable[str]):
+        self.name = name
+        self.contents = list(contents)
+        try:
+            descr=self.contents[0]
+        except IndexError:
+            descr = ""
+        self.descr = descr
 
 
-def make_docitems(rootpath: Path):
-    return PackageItem(Path(rootpath))
+class ScriptItem(FileItem):
+    pass
+
+
+class ClassItem(FileItem):
+    pass
+
+
+class FunctionItem(FileItem):
+    pass
