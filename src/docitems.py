@@ -95,7 +95,7 @@ class PackageItem(DocItem):
                     line = next(ff)
                     lines = self.get_lines(ff)
                     if line.startswith('%'):
-                        item = ScriptItem(fpath.stem, chain([line], lines))
+                        item = ScriptItem(fpath.stem, chain([line[1:]], lines))
                         if f.name == 'Contents.m':
                             self.descr = item.descr
                     elif "function" in line:
