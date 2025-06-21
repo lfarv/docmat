@@ -8,6 +8,7 @@ import re
 
 
 def directive_md(directive, argument, options, contents, **kwargs):
+    """Myst directive"""
     if argument:
         print(f":::{{{directive}}} {argument}", **kwargs)
     else:
@@ -21,10 +22,12 @@ def directive_md(directive, argument, options, contents, **kwargs):
 
 
 def title_md(title, **kwargs):
+    """Myst title"""
     print(f"# {title}\n", **kwargs)
 
 
 def directive_rst(directive, argument, options, contents, **kwargs):
+    """RST directive"""
     if argument:
         print(f".. {directive}:: {argument}", **kwargs)
     else:
@@ -38,12 +41,14 @@ def directive_rst(directive, argument, options, contents, **kwargs):
 
 
 def title_rst(title, **kwargs):
+    """RST title"""
     print(title, **kwargs)
     print("=" * len(title), **kwargs)
     print(**kwargs)
 
 
 def table_rst(role, rows, **kwargs):
+    """RST table"""
     print(".. list-table::\n", **kwargs)
     for (name, descr) in rows:
         print(f"   * - {role}`{name}`", **kwargs)
@@ -52,6 +57,7 @@ def table_rst(role, rows, **kwargs):
 
 
 def _label(name, **kwargs):
+    """RST label"""
     print(f".. _{name}:\n", **kwargs)
 
 
@@ -70,7 +76,7 @@ class DocItem:
 
 
 class PackageItem(DocItem):
-
+    """Representation of a Matlab directory"""
     @staticmethod
     def get_lines(f: Iterable[str]) -> Iterable[str]:
         for line in f:
@@ -112,7 +118,7 @@ class PackageItem(DocItem):
                             self.descr = item.descr
                     elif "function" in line:
                         store(funcs, FunctionItem, name, lines)
-                    elif "class" in line:
+                    elif "classdef" in line:
                          store(cls, ClassItem, name, lines)
 
         self.subpackages = sorted(packs, key=lambda p: p.name)
@@ -132,14 +138,14 @@ class PackageItem(DocItem):
 
         if self.classes:
             _directive("rubric", "Classes", [], [], file=file)
-            _table(":class:", ((f.name, f.descr) for f in self.functions), file=file)
+            _table(":class:", ((c.name, c.descr) for c in self.classes), file=file)
 
         if self.functions:
             _directive("rubric", "Functions", [], [], file=file)
             _table(":func:", ((f.name, f.descr) for f in self.functions), file=file)
 
-        for f in self.classes:
-            f.gen(file=file)
+        for c in self.classes:
+            c.gen(file=file)
 
         for f in self.functions:
             f.gen(file=file)
@@ -159,6 +165,7 @@ class PackageItem(DocItem):
 
 
 class FileItem(DocItem):
+    """Representation of a Matlab file (function, script, class)"""
     def __init__(self, name: str, contents: Iterable[str]):
         self.name = name
         self.arguments = ""
@@ -194,12 +201,15 @@ class FileItem(DocItem):
 
 
 class ScriptItem(FileItem):
+    """Representation of a Matlab script"""
     pass
 
 
 class ClassItem(FileItem):
+    """Representation of a Matlab class"""
     pass
 
 
 class FunctionItem(FileItem):
+    """Representation of a Matlab function"""
     pass
