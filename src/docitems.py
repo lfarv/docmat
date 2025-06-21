@@ -4,6 +4,7 @@ import sys
 from collections.abc import Iterable
 from itertools import chain
 from pathlib import Path
+import re
 
 
 def directive_md(directive, argument, options, contents, **kwargs):
@@ -75,9 +76,18 @@ class PackageItem(DocItem):
         for line in f:
             if not line.startswith('%'):
                 break
-            yield line[1:-1].rstrip()
+            yield line[1:].rstrip()
 
     def __init__(self, pth: Path, rootpath: Path | None = None) -> None:
+
+        def store(container, cls, name, contents):
+            try:
+                item = cls(name, contents)
+            except TypeError:
+                pass
+            else:
+                container.append(item)
+
         if rootpath is None:
             rootpath = pth.parent
         packs = []
@@ -88,57 +98,60 @@ class PackageItem(DocItem):
         self.descr = pth.name.upper()
         for f in pth.iterdir():
             fpath = pth / f
+            name = fpath.stem
             if f.is_dir():
-                packs.append(PackageItem(fpath, rootpath))
+                if not (name == "private" or name.endswith("@")):
+                    packs.append(PackageItem(fpath, rootpath))
             elif f.is_file() and f.suffix == '.m':
                 with f.open("rt") as ff:
-                    line = next(ff)
+                    line = next(ff).rstrip()
                     lines = self.get_lines(ff)
                     if line.startswith('%'):
-                        item = ScriptItem(fpath.stem, chain([line[1:]], lines))
+                        item = ScriptItem(name, chain([line[1:]], lines))
                         if f.name == 'Contents.m':
                             self.descr = item.descr
                     elif "function" in line:
-                        funcs.append(FunctionItem(fpath.stem, lines))
+                        store(funcs, FunctionItem, name, lines)
                     elif "class" in line:
-                        cls.append(ClassItem(fpath.stem, lines))
+                         store(cls, ClassItem, name, lines)
 
-        self.subpackages = packs
-        self.functions = funcs
-        self.classes = cls
+        self.subpackages = sorted(packs, key=lambda p: p.name)
+        self.functions = sorted(funcs, key=lambda f: f.name)
+        self.classes = sorted(cls, key=lambda c: c.name)
+
+    def gen(self, file=sys.stdout):
+        _label(make_label(self.name), file=file)
+        _title(self.name, file=file)
+
+        if self.subpackages:
+            tocitems = [f"{p.id}" for p in self.subpackages]
+            _directive("toctree", "", [":hidden:"], tocitems, file=file)
+            _directive("rubric", "Modules", [], [], file=file)
+            tbl = ((make_label(p.name), p.descr) for p in self.subpackages)
+            _table(":ref:", tbl, file=file)
+
+        if self.classes:
+            _directive("rubric", "Classes", [], [], file=file)
+            _table(":class:", ((f.name, f.descr) for f in self.functions), file=file)
+
+        if self.functions:
+            _directive("rubric", "Functions", [], [], file=file)
+            _table(":func:", ((f.name, f.descr) for f in self.functions), file=file)
+
+        for f in self.classes:
+            f.gen(file=file)
+
+        for f in self.functions:
+            f.gen(file=file)
 
     def generate(self, dest=None, recursive: bool = None):
-        def gen(file):
-            _label(make_label(self.name), file=file)
-            _title(self.name, file=file)
-
-            if self.subpackages:
-                tocitems = [f"{p.id}" for p in self.subpackages]
-                _directive("toctree","", [":hidden:"], tocitems, file=file)
-                _directive("rubric", "Modules", [], [], file=file)
-                tbl = ((make_label(p.name), p.descr) for p in self.subpackages)
-                _table(":ref:", tbl, file=file)
-
-            if self.classes:
-                _directive("rubric", "Classes", [], [], file=file)
-                _table(":class:", ((f.name, f.descr) for f in self.functions), file=file)
-                for f in self.classes:
-                    contents = ("".join(("| ", line)) for line in f.contents)
-                    _directive("py:class", f.name, [], contents, file=file)
-
-            if self.functions:
-                _directive("rubric", "Functions", [], [], file=file)
-                _table(":func:", ((f.name, f.descr) for f in self.functions), file=file)
-                for f in self.functions:
-                    contents = ("".join(("| ", line)) for line in f.contents)
-                    _directive("py:function", f.name, [], contents, file=file)
 
         if dest is None:
-            gen(sys.stdout)
+            self.gen(sys.stdout)
         else:
             fn = Path(dest) / "api" / ".".join((self.id, "rst"))
             with fn.open("wt") as f:
-                gen(f)
+                self.gen(f)
 
         if recursive:
             for p in self.subpackages:
@@ -148,12 +161,36 @@ class PackageItem(DocItem):
 class FileItem(DocItem):
     def __init__(self, name: str, contents: Iterable[str]):
         self.name = name
-        self.contents = list(contents)
+        self.arguments = ""
+        self.descr = ""
+        self.contents = list(self.scan(contents))
+
+    def scan(self, src: Iterable[str]):
+
+        def emph(m: re.Match):
+            if m.group(4) and not self.arguments:
+                self.arguments = m.group(4).lower()
+            return "".join(("**", m.group(0).lower(), "**"))
+
+        pattern = f"((\w+|\[.*?\])\s*=\s*)?({self.name})(\(.*\))?(?!\w)"
         try:
-            descr=self.contents[0]
-        except IndexError:
-            descr = ""
-        self.descr = descr
+            line = next(src)
+        except StopIteration:
+            return
+
+        if "private" in line.lower():
+            raise TypeError("private files are excluded")
+        self.descr = line.replace(self.name.upper(), "").strip()
+        yield self.descr
+
+        for line in src:
+            yield re.sub(pattern, emph, line, flags=re.I)
+
+
+    def gen(self, file=sys.stdout):
+        contents = ("".join(("| ", line)) for line in self.contents)
+        signature = "".join((self.name, self.arguments))
+        _directive("py:function", signature, [], contents, file=file)
 
 
 class ScriptItem(FileItem):
