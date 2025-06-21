@@ -175,11 +175,14 @@ class FileItem(DocItem):
     def scan(self, src: Iterable[str]):
 
         def emph(m: re.Match):
-            if m.group(4) and not self.arguments:
-                self.arguments = m.group(4).lower()
+            if m.group(2) and not self.arguments:
+                self.arguments = m.group(2).lower()
             return "".join(("**", m.group(0).lower(), "**"))
 
-        pattern = f"((\w+|\[.*?\])\s*=\s*)?({self.name})(\(.*\))?(?!\w)"
+        pattern = f"(?<!\w)(?:(\w+|\[.*?\])\s*=\s*)?(?:{self.name})(\(.*\))?(?!\w)"
+        # group(0):  full match
+        # group(1):  return value
+        # group(2):  arguments
         try:
             line = next(src)
         except StopIteration:
