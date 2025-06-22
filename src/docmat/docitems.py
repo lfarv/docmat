@@ -84,7 +84,7 @@ class PackageItem(DocItem):
                 break
             yield line[1:].rstrip()
 
-    def __init__(self, pth: Path, rootpath: Path | None = None) -> None:
+    def __init__(self, pth: Path, rootpath: Path | None = None, recursive: bool = True) -> None:
 
         def store(container, cls, name, contents):
             try:
@@ -105,7 +105,7 @@ class PackageItem(DocItem):
         for f in pth.iterdir():
             fpath = pth / f
             name = fpath.stem
-            if f.is_dir():
+            if recursive and f.is_dir():
                 if not (name == "private" or name.endswith("@")):
                     packs.append(PackageItem(fpath, rootpath))
             elif f.is_file() and f.suffix == '.m':
@@ -113,23 +113,26 @@ class PackageItem(DocItem):
                     line = next(ff).rstrip()
                     lines = self.get_lines(ff)
                     if line.startswith('%'):
-                        item = ScriptItem(name, chain([line[1:]], lines))
+                        try:
+                            item = ScriptItem(name, chain([line[1:]], lines))
+                        except TypeError:
+                            break
                         if f.name == 'Contents.m':
                             self.descr = item.descr
                     elif "function" in line:
                         store(funcs, FunctionItem, name, lines)
                     elif "classdef" in line:
-                         store(cls, ClassItem, name, lines)
+                        store(cls, ClassItem, name, lines)
 
         self.subpackages = sorted(packs, key=lambda p: p.name)
         self.functions = sorted(funcs, key=lambda f: f.name)
         self.classes = sorted(cls, key=lambda c: c.name)
 
-    def gen(self, file=sys.stdout):
+    def gen(self, file=sys.stdout, recursive: bool = False):
         _label(make_label(self.name), file=file)
         _title(self.name, file=file)
 
-        if self.subpackages:
+        if recursive and self.subpackages:
             tocitems = [f"{p.id}" for p in self.subpackages]
             _directive("toctree", "", [":hidden:"], tocitems, file=file)
             _directive("rubric", "Modules", [], [], file=file)
@@ -153,11 +156,11 @@ class PackageItem(DocItem):
     def generate(self, dest=None, recursive: bool = None):
 
         if dest is None:
-            self.gen(sys.stdout)
+            self.gen(sys.stdout, recursive=recursive)
         else:
             fn = Path(dest) / "api" / ".".join((self.id, "rst"))
             with fn.open("wt") as f:
-                self.gen(f)
+                self.gen(f, recursive=recursive)
 
         if recursive:
             for p in self.subpackages:
