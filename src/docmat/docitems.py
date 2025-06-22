@@ -155,6 +155,9 @@ class PackageItem(DocItem):
 
     def generate(self, dest=None, recursive: bool = None):
 
+        if not (self.subpackages or self.functions or self.classes):
+            return
+
         if dest is None:
             self.gen(sys.stdout, recursive=recursive)
         else:
