@@ -1,8 +1,9 @@
 #! env python
 import sys
+from pathlib import Path
 
 from .docitems import PackageItem
-from pathlib import Path
+
 
 def main():
     source = sys.argv[1] if len(sys.argv) > 1 else "."
@@ -15,8 +16,9 @@ def main():
         doc = PackageItem(rootpath / module)
         doc.generate(dest, recursive=True)
 
+
 # Press the green button in the gutter to run the script.
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
 
 

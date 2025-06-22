@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import re
 import sys
 from collections.abc import Iterable
 from itertools import chain
 from pathlib import Path
-import re
 
 
 def directive_md(directive, argument, options, contents, **kwargs):
@@ -50,7 +50,7 @@ def title_rst(title, **kwargs):
 def table_rst(role, rows, **kwargs):
     """RST table"""
     print(".. list-table::\n", **kwargs)
-    for (name, descr) in rows:
+    for name, descr in rows:
         print(f"   * - {role}`{name}`", **kwargs)
         print(f"     - {descr}", **kwargs)
     print(**kwargs)
@@ -64,28 +64,32 @@ def _label(name, **kwargs):
 def make_label(name):
     return f"{name.replace(' ', '-').lower()}_module"
 
+
 _directive = directive_rst
 _title = title_rst
 _table = table_rst
 
+
 class DocItem:
     @staticmethod
     def make_name(rootpath, pth):
-        relpath=pth.relative_to(rootpath)
-        return '.'.join(relpath.parts)
+        relpath = pth.relative_to(rootpath)
+        return ".".join(relpath.parts)
 
 
 class PackageItem(DocItem):
     """Representation of a Matlab directory"""
+
     @staticmethod
     def get_lines(f: Iterable[str]) -> Iterable[str]:
         for line in f:
-            if not line.startswith('%'):
+            if not line.startswith("%"):
                 break
             yield line[1:].rstrip()
 
-    def __init__(self, pth: Path, rootpath: Path | None = None, recursive: bool = True) -> None:
-
+    def __init__(
+        self, pth: Path, rootpath: Path | None = None, recursive: bool = True
+    ) -> None:
         def store(container, cls, name, contents):
             try:
                 item = cls(name, contents)
@@ -108,16 +112,16 @@ class PackageItem(DocItem):
             if recursive and f.is_dir():
                 if not (name == "private" or name.endswith("@")):
                     packs.append(PackageItem(fpath, rootpath))
-            elif f.is_file() and f.suffix == '.m':
+            elif f.is_file() and f.suffix == ".m":
                 with f.open("rt") as ff:
                     line = next(ff).rstrip()
                     lines = self.get_lines(ff)
-                    if line.startswith('%'):
+                    if line.startswith("%"):
                         try:
                             item = ScriptItem(name, chain([line[1:]], lines))
                         except TypeError:
                             break
-                        if f.name == 'Contents.m':
+                        if f.name == "Contents.m":
                             self.descr = item.descr
                     elif "function" in line:
                         store(funcs, FunctionItem, name, lines)
@@ -154,24 +158,22 @@ class PackageItem(DocItem):
             f.gen(file=file)
 
     def generate(self, dest=None, recursive: bool = None):
+        if self.subpackages or self.functions or self.classes:
+            if dest is None:
+                self.gen(sys.stdout, recursive=recursive)
+            else:
+                fn = Path(dest) / "api" / ".".join((self.id, "rst"))
+                with fn.open("wt") as f:
+                    self.gen(f, recursive=recursive)
 
-        if not (self.subpackages or self.functions or self.classes):
-            return
-
-        if dest is None:
-            self.gen(sys.stdout, recursive=recursive)
-        else:
-            fn = Path(dest) / "api" / ".".join((self.id, "rst"))
-            with fn.open("wt") as f:
-                self.gen(f, recursive=recursive)
-
-        if recursive:
-            for p in self.subpackages:
-                p.generate(dest, recursive=recursive)
+            if recursive:
+                for p in self.subpackages:
+                    p.generate(dest, recursive=recursive)
 
 
 class FileItem(DocItem):
     """Representation of a Matlab file (function, script, class)"""
+
     def __init__(self, name: str, contents: Iterable[str]):
         self.name = name
         self.arguments = ""
@@ -179,7 +181,6 @@ class FileItem(DocItem):
         self.contents = list(self.scan(contents))
 
     def scan(self, src: Iterable[str]):
-
         def emph(m: re.Match):
             if m.group(2) and not self.arguments:
                 self.arguments = m.group(2).lower()
@@ -202,7 +203,6 @@ class FileItem(DocItem):
         for line in src:
             yield re.sub(pattern, emph, line, flags=re.I)
 
-
     def gen(self, file=sys.stdout):
         contents = ("".join(("| ", line)) for line in self.contents)
         signature = "".join((self.name, self.arguments))
@@ -211,14 +211,17 @@ class FileItem(DocItem):
 
 class ScriptItem(FileItem):
     """Representation of a Matlab script"""
+
     pass
 
 
 class ClassItem(FileItem):
     """Representation of a Matlab class"""
+
     pass
 
 
 class FunctionItem(FileItem):
     """Representation of a Matlab function"""
+
     pass
