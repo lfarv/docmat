@@ -6,68 +6,7 @@ from collections.abc import Iterable
 from itertools import chain
 from pathlib import Path
 
-
-def directive_md(directive, argument, options, contents, **kwargs):
-    """Myst directive"""
-    if argument:
-        print(f":::{{{directive}}} {argument}", **kwargs)
-    else:
-        print(f":::{{{directive}}}", **kwargs)
-    for opt in options:
-        print(f"{opt}", **kwargs)
-        print(**kwargs)
-    for line in contents:
-        print(line, **kwargs)
-    print(":::\n", **kwargs)
-
-
-def title_md(title, **kwargs):
-    """Myst title"""
-    print(f"# {title}\n", **kwargs)
-
-
-def directive_rst(directive, argument, options, contents, **kwargs):
-    """RST directive"""
-    if argument:
-        print(f".. {directive}:: {argument}", **kwargs)
-    else:
-        print(f".. {directive}::", **kwargs)
-    for opt in options:
-        print(f"   {opt}", **kwargs)
-    print(**kwargs)
-    for line in contents:
-        print("  ", line, **kwargs)
-    print(**kwargs)
-
-
-def title_rst(title, **kwargs):
-    """RST title"""
-    print(title, **kwargs)
-    print("=" * len(title), **kwargs)
-    print(**kwargs)
-
-
-def table_rst(role, rows, **kwargs):
-    """RST table"""
-    print(".. list-table::\n", **kwargs)
-    for name, descr in rows:
-        print(f"   * - {role}`{name}`", **kwargs)
-        print(f"     - {descr}", **kwargs)
-    print(**kwargs)
-
-
-def _label(name, **kwargs):
-    """RST label"""
-    print(f".. _{name}:\n", **kwargs)
-
-
-def make_label(name):
-    return f"{name.replace(' ', '-').lower()}_module"
-
-
-_directive = directive_rst
-_title = title_rst
-_table = table_rst
+from .builders import Builder, RstBuilder
 
 
 class DocItem:
@@ -75,6 +14,10 @@ class DocItem:
     def make_name(rootpath, pth):
         relpath = pth.relative_to(rootpath)
         return ".".join(relpath.parts)
+
+    @staticmethod
+    def make_label(name):
+        return f"{name.replace(' ', '-').lower()}_module"
 
 
 class PackageItem(DocItem):
@@ -88,7 +31,10 @@ class PackageItem(DocItem):
             yield line[1:].rstrip()
 
     def __init__(
-        self, pth: Path, rootpath: Path | None = None, recursive: bool = True
+        self,
+        pth: Path,
+        rootpath: Path | None = None,
+        recursive: bool = True,
     ) -> None:
         def store(container, cls, name, contents):
             try:
@@ -107,11 +53,12 @@ class PackageItem(DocItem):
         self.name = pth.stem
         self.descr = pth.name.upper()
         for f in pth.iterdir():
-            fpath = pth / f
-            name = fpath.stem
+            name = f.stem
             if recursive and f.is_dir():
                 if not (name == "private" or name.endswith("@")):
-                    packs.append(PackageItem(fpath, rootpath))
+                    item = PackageItem(f, rootpath)
+                    if item.sz > 0:
+                        packs.append(item)
             elif f.is_file() and f.suffix == ".m":
                 with f.open("rt") as ff:
                     line = next(ff).rstrip()
@@ -132,61 +79,81 @@ class PackageItem(DocItem):
         self.functions = sorted(funcs, key=lambda f: f.name)
         self.classes = sorted(cls, key=lambda c: c.name)
 
-    def gen(self, file=sys.stdout, recursive: bool = False):
-        _label(make_label(self.name), file=file)
-        _title(self.name, file=file)
+    @property
+    def sz(self):
+        return len(self.subpackages) + len(self.functions) + len(self.classes)
+
+    def gen(
+        self,
+        file=sys.stdout,
+        recursive: bool = False,
+        builder: type[Builder] = RstBuilder,
+    ):
+        builder.label(self.make_label(self.name), file=file)
+        builder.title(self.name, file=file)
 
         if recursive and self.subpackages:
             tocitems = [f"{p.id}" for p in self.subpackages]
-            _directive("toctree", "", [":hidden:"], tocitems, file=file)
-            _directive("rubric", "Modules", [], [], file=file)
-            tbl = ((make_label(p.name), p.descr) for p in self.subpackages)
-            _table(":ref:", tbl, file=file)
+            builder.directive("toctree", "", [":hidden:"], tocitems, file=file)
+            builder.directive("rubric", "Modules", [], [], file=file)
+            tbl = (
+                (builder.role("ref", self.make_label(p.name)), p.descr)
+                for p in self.subpackages
+            )
+            builder.table(tbl, file=file)
 
         if self.classes:
-            _directive("rubric", "Classes", [], [], file=file)
-            _table(":class:", ((c.name, c.descr) for c in self.classes), file=file)
+            tbl = ((builder.role("class", c.name), c.descr) for c in self.classes)
+            builder.directive("rubric", "Classes", [], [], file=file)
+            builder.table(tbl, file=file)
 
         if self.functions:
-            _directive("rubric", "Functions", [], [], file=file)
-            _table(":func:", ((f.name, f.descr) for f in self.functions), file=file)
+            tbl = ((builder.role("func", f.name), f.descr) for f in self.functions)
+            builder.directive("rubric", "Functions", [], [], file=file)
+            builder.table(tbl, file=file)
 
         for c in self.classes:
-            c.gen(file=file)
+            c.gen(file=file, builder=builder)
 
         for f in self.functions:
-            f.gen(file=file)
+            f.gen(file=file, builder=builder)
 
-    def generate(self, dest=None, recursive: bool = None):
-        if self.subpackages or self.functions or self.classes:
-            if dest is None:
-                self.gen(sys.stdout, recursive=recursive)
-            else:
-                fn = Path(dest) / "api" / ".".join((self.id, "rst"))
-                with fn.open("wt") as f:
-                    self.gen(f, recursive=recursive)
+    def generate(
+        self, dest=None, recursive: bool = None, builder: type[Builder] = RstBuilder
+    ):
+        if dest is None:
+            self.gen(sys.stdout, recursive=recursive, builder=builder)
+        else:
+            fn = Path(dest) / "api" / "".join((self.id, builder.suffix))
+            with fn.open("wt") as f:
+                self.gen(f, recursive=recursive, builder=builder)
 
-            if recursive:
-                for p in self.subpackages:
-                    p.generate(dest, recursive=recursive)
+        if recursive:
+            for p in self.subpackages:
+                p.generate(dest, recursive=recursive, builder=builder)
 
 
 class FileItem(DocItem):
     """Representation of a Matlab file (function, script, class)"""
 
+    role = "obj"
+
     def __init__(self, name: str, contents: Iterable[str]):
         self.name = name
         self.arguments = ""
         self.descr = ""
+        self.see_also = []
         self.contents = list(self.scan(contents))
 
     def scan(self, src: Iterable[str]):
-        def emph(m: re.Match):
+        def strong(m: re.Match):
             if m.group(2) and not self.arguments:
                 self.arguments = m.group(2).lower()
-            return "".join(("**", m.group(0).lower(), "**"))
+            nm = self.name
+            item = m.group(0).lower().replace(nm.lower(), nm)
+            return "".join(("**", item, "**"))
 
-        pattern = f"(?<!\w)(?:(\w+|\[.*?\])\s*=\s*)?(?:{self.name})(\(.*\))?(?!\w)"
+        pattern = rf"(?<!\w)(?:(\w+|\[.*?\])\s*=\s*)?(?:{self.name})(\(.*\))?(?!\w)"
         # group(0):  full match
         # group(1):  return value
         # group(2):  arguments
@@ -201,19 +168,26 @@ class FileItem(DocItem):
         yield self.descr
 
         for line in src:
-            yield re.sub(pattern, emph, line, flags=re.I)
+            idx = line.find("See also")
+            if idx >= 0:
+                self.see_also = [v.lower() for v in re.findall(r"\w+", line[idx + 9 :])]
+            else:
+                yield re.sub(pattern, strong, line, flags=re.I)
 
-    def gen(self, file=sys.stdout):
-        contents = ("".join(("| ", line)) for line in self.contents)
+    def gen(self, file=sys.stdout, builder: type[Builder] = RstBuilder):
+        contents = self.contents
+        if self.see_also:
+            sa = [builder.role("func", v) for v in self.see_also]
+            contents.append("See also " + ", ".join(sa))
+        contents = builder.line_block(contents) if contents else ()
         signature = "".join((self.name, self.arguments))
-        _directive("py:function", signature, [], contents, file=file)
+        builder.directive("py:function", signature, [], contents, file=file)
 
 
 class ScriptItem(FileItem):
     """Representation of a Matlab script"""
 
     pass
-
 
 class ClassItem(FileItem):
     """Representation of a Matlab class"""

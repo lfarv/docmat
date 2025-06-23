@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 from .docitems import PackageItem
+from .builders import MystBuilder
 
 
 def main():
