@@ -38,7 +38,18 @@ class Builder(ABC):
 
     @staticmethod
     @abstractmethod
-    def role(role_name: str, value: str) -> str: ...
+    def role(role_name: str, value: str) -> str:
+        """
+        Generate a role reference in the target format.
+
+        Args:
+            role_name: The name of the role
+            value: The value for the role
+
+        Returns:
+            A formatted string representing the role
+        """
+        ...
 
     @staticmethod
     @abstractmethod
@@ -78,7 +89,17 @@ class Builder(ABC):
 
     @staticmethod
     @abstractmethod
-    def line_block(inpt: Iterable[str]) -> Iterable[str]: ...
+    def line_block(inpt: Iterable[str]) -> Iterable[str]:
+        """
+        Generate a line block in the target format.
+
+        Args:
+            inpt: Iterable of strings representing lines of text
+
+        Returns:
+            Iterable of strings representing the formatted line block
+        """
+        ...
 
 
 class RstBuilder(Builder):
@@ -121,6 +142,16 @@ class RstBuilder(Builder):
 
     @staticmethod
     def role(role_name: str, value: str) -> str:
+        """
+        Generate an RST role reference.
+
+        Args:
+            role_name: The name of the role
+            value: The value for the role
+
+        Returns:
+            A formatted string representing the role
+        """
         return f":{role_name}:`{value}`"
 
     @staticmethod
@@ -164,6 +195,15 @@ class RstBuilder(Builder):
 
     @staticmethod
     def line_block(inpt: Iterable[str]) -> Iterable[str]:
+        """
+        Generate an RST line block.
+
+        Args:
+            inpt: Iterable of strings representing lines of text
+
+        Returns:
+            Iterable of strings representing the formatted line block
+        """
         for line in inpt:
             if line:
                 yield "| " + line
@@ -212,6 +252,17 @@ class MystBuilder(Builder):
 
     @staticmethod
     def role(role_name: str, value: str) -> str:
+        """
+        Generate a MyST role reference.
+
+        Args:
+            role_name: The name of the role
+            value: The value for the role
+
+        Returns:
+            A formatted string representing the role
+        """
+
         return f"{{{role_name}}}`{value}`"
 
     @staticmethod
@@ -254,6 +305,15 @@ class MystBuilder(Builder):
 
     @staticmethod
     def line_block(inpt: Iterable[str]) -> Iterable[str]:
+        """
+        Generate a MyST line block.
+
+        Args:
+            inpt: Iterable of strings representing lines of text
+
+        Returns:
+            Iterable of strings representing the formatted line block
+        """
         yield ":::{line-block}"
         yield from inpt
         yield ":::\n"
