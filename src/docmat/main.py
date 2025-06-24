@@ -3,7 +3,10 @@ import sys
 from pathlib import Path
 
 from .docitems import PackageItem
-from .builders import MystBuilder
+# noinspection PyUnresolvedReferences
+from .builders import RstBuilder, MystBuilder
+
+_builder = RstBuilder
 
 
 def main():
@@ -23,7 +26,7 @@ def main():
         "atmat",
         "atmatch",
     ]:
-        package[module].generate(dest, recursive=True)
+        package[module].generate(dest, builder=_builder)
 
 
 # Press the green button in the gutter to run the script.

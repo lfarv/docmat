@@ -104,7 +104,7 @@ class PackageItem(DocItem):
     def gen(
         self,
         file=sys.stdout,
-        recursive: bool = False,
+        recursive: bool = True,
         builder: type[Builder] = RstBuilder,
     ):
         builder.label(self.make_label(self.name), file=file)
@@ -137,7 +137,7 @@ class PackageItem(DocItem):
             f.gen(file=file, builder=builder)
 
     def generate(
-        self, dest=None, recursive: bool = None, builder: type[Builder] = RstBuilder
+        self, dest=None, recursive: bool = True, builder: type[Builder] = RstBuilder
     ):
         if dest is None:
             self.gen(sys.stdout, recursive=recursive, builder=builder)
