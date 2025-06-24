@@ -1,7 +1,8 @@
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import TextIO
 from collections.abc import Iterable
+from typing import TextIO
 
 
 class Builder(ABC):

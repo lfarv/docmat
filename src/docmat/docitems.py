@@ -5,6 +5,7 @@ import sys
 from collections.abc import Iterable
 from itertools import chain
 from pathlib import Path
+from typing import TextIO
 
 from .builders import Builder, RstBuilder
 
@@ -30,13 +31,17 @@ class DocItem:
 class PackageItem(DocItem):
     """Representation of a Matlab directory"""
 
+    MATLAB_EXTENSION = ".m"
+    PRIVATE_DIR = "private"
+    CONTENTS_FILE = "Contents.m"
+
     @staticmethod
-    def make_name(rootpath, pth):
+    def make_name(rootpath: Path, pth: Path) -> str:
         relpath = pth.relative_to(rootpath)
         return ".".join(relpath.parts)
 
     @staticmethod
-    def make_label(name):
+    def make_label(name: str) -> str:
         return f"{name.replace(' ', '-').casefold()}_module"
 
     @staticmethod
@@ -52,53 +57,75 @@ class PackageItem(DocItem):
         rootpath: Path | None = None,
         recursive: bool = True,
     ) -> None:
-        def store(container, cls, name, contents):
-            try:
-                item = cls(name, contents)
-            except TypeError:
-                pass
-            else:
-                self.leaf[name.casefold()] = item
-                container.append(item)
-
         if rootpath is None:
             rootpath = pth.parent
-        packs = []
-        funcs = []
-        cls = []
+
         self.id = self.make_name(rootpath, pth)
         self.name = pth.stem
         self.descr = pth.name.upper()
-        for f in pth.iterdir():
-            name = f.stem
-            if recursive and f.is_dir():
-                if not (name == "private" or name.endswith("@")):
-                    item = PackageItem(f, rootpath)
-                    if item.sz > 0:
-                        self.node[name.casefold()] = item
-                        packs.append(item)
-            elif f.is_file() and f.suffix == ".m":
-                with f.open("rt") as ff:
-                    line = next(ff).rstrip()
-                    lines = self.get_lines(ff)
-                    if line.startswith("%"):
-                        try:
-                            item = ScriptItem(name, chain([line[1:]], lines))
-                        except TypeError:
-                            break
-                        if f.name == "Contents.m":
-                            self.descr = item.descr
-                    elif "function" in line:
-                        store(funcs, FunctionItem, name, lines)
-                    elif "classdef" in line:
-                        store(cls, ClassItem, name, lines)
 
-        self.subpackages = sorted(packs, key=lambda p: p.name)
-        self.functions = sorted(funcs, key=lambda f: f.name)
-        self.classes = sorted(cls, key=lambda c: c.name)
+        self.subpackages: list = []
+        self.functions: list = []
+        self.classes: list = []
+
+        self._process_directory(pth, rootpath, recursive)
+        self._sort_items()
+
+    def _process_directory(self, pth: Path, rootpath: Path, recursive: bool) -> None:
+        for file_path in pth.iterdir():
+            if recursive and file_path.is_dir():
+                self._handle_subdirectory(file_path, rootpath)
+            elif file_path.is_file() and file_path.suffix == self.MATLAB_EXTENSION:
+                self._process_matlab_file(file_path)
+
+    def _handle_subdirectory(self, dir_path: Path, rootpath: Path) -> None:
+        name = dir_path.stem
+        if not (name == self.PRIVATE_DIR or name.endswith("@")):
+            item = PackageItem(dir_path, rootpath)
+            if item.sz > 0:
+                self.node[name.casefold()] = item
+                self.subpackages.append(item)
+
+    def _process_matlab_file(self, file_path: Path) -> None:
+        name = file_path.stem
+        with file_path.open("rt") as ff:
+            first_line = next(ff).rstrip()
+            lines = self.get_lines(ff)
+
+            if first_line.startswith("%"):
+                self._handle_script_file(name, first_line, lines, file_path)
+            elif "function" in first_line:
+                self._store_item(self.functions, FunctionItem, name, lines)
+            elif "classdef" in first_line:
+                self._store_item(self.classes, ClassItem, name, lines)
+
+    def _handle_script_file(
+        self, name: str, first_line: str, lines: Iterable[str], file_path: Path
+    ) -> None:
+        try:
+            item = ScriptItem(name, chain([first_line[1:]], lines))
+            if file_path.name == self.CONTENTS_FILE:
+                self.descr = item.descr
+        except TypeError:
+            return
+
+    def _store_item(
+        self, container: list, cls: type, name: str, contents: Iterable[str]
+    ) -> None:
+        try:
+            item = cls(name, contents)
+        except TypeError:
+            return
+        self.leaf[name.casefold()] = item
+        container.append(item)
+
+    def _sort_items(self) -> None:
+        self.subpackages.sort(key=lambda p: p.name)
+        self.functions.sort(key=lambda f: f.name)
+        self.classes.sort(key=lambda c: c.name)
 
     @property
-    def sz(self):
+    def sz(self) -> int:
         return len(self.subpackages) + len(self.functions) + len(self.classes)
 
     def gen(
@@ -106,10 +133,20 @@ class PackageItem(DocItem):
         file=sys.stdout,
         recursive: bool = True,
         builder: type[Builder] = RstBuilder,
-    ):
+    ) -> None:
+        self._generate_header(file, builder)
+        self._generate_package_section(file, recursive, builder)
+        self._generate_class_section(file, builder)
+        self._generate_function_section(file, builder)
+        self._generate_items(file, builder)
+
+    def _generate_header(self, file: TextIO, builder: type[Builder]) -> None:
         builder.label(self.make_label(self.name), file=file)
         builder.title(self.name, file=file)
 
+    def _generate_package_section(
+        self, file: TextIO, recursive: bool, builder: type[Builder]
+    ) -> None:
         if recursive and self.subpackages:
             tocitems = [f"{p.id}" for p in self.subpackages]
             builder.directive("toctree", "", [":hidden:"], tocitems, file=file)
@@ -120,25 +157,27 @@ class PackageItem(DocItem):
             )
             builder.table(tbl, file=file)
 
+    def _generate_class_section(self, file: TextIO, builder: type[Builder]) -> None:
         if self.classes:
             tbl = ((builder.role("class", c.name), c.descr) for c in self.classes)
             builder.directive("rubric", "Classes", [], [], file=file)
             builder.table(tbl, file=file)
 
+    def _generate_function_section(self, file: TextIO, builder: type[Builder]) -> None:
         if self.functions:
             tbl = ((builder.role("func", f.name), f.descr) for f in self.functions)
             builder.directive("rubric", "Functions", [], [], file=file)
             builder.table(tbl, file=file)
 
+    def _generate_items(self, file: TextIO, builder: type[Builder]) -> None:
         for c in self.classes:
             c.gen(file=file, builder=builder)
-
         for f in self.functions:
             f.gen(file=file, builder=builder)
 
     def generate(
         self, dest=None, recursive: bool = True, builder: type[Builder] = RstBuilder
-    ):
+    ) -> None:
         if dest is None:
             self.gen(sys.stdout, recursive=recursive, builder=builder)
         else:

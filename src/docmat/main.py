@@ -2,9 +2,8 @@
 import sys
 from pathlib import Path
 
+from .builders import RstBuilder, MystBuilder  # noqa: F401
 from .docitems import PackageItem
-# noinspection PyUnresolvedReferences
-from .builders import RstBuilder, MystBuilder
 
 _builder = RstBuilder
 
