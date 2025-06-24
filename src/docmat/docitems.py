@@ -10,6 +10,26 @@ from .builders import Builder, RstBuilder
 
 
 class DocItem:
+    """Base class for documentation items"""
+
+    role = "obj"
+    defn = "py:function"
+    node = {}
+    leaf = {}
+
+    def target(self, name, builder):
+        try:
+            target = self.leaf[name]
+        except KeyError:
+            print(f"Undefined name in {self.name}: {name}")
+            return builder.role("func", name)
+        else:
+            return builder.role(target.role, target.name)
+
+
+class PackageItem(DocItem):
+    """Representation of a Matlab directory"""
+
     @staticmethod
     def make_name(rootpath, pth):
         relpath = pth.relative_to(rootpath)
@@ -17,11 +37,7 @@ class DocItem:
 
     @staticmethod
     def make_label(name):
-        return f"{name.replace(' ', '-').lower()}_module"
-
-
-class PackageItem(DocItem):
-    """Representation of a Matlab directory"""
+        return f"{name.replace(' ', '-').casefold()}_module"
 
     @staticmethod
     def get_lines(f: Iterable[str]) -> Iterable[str]:
@@ -42,6 +58,7 @@ class PackageItem(DocItem):
             except TypeError:
                 pass
             else:
+                self.leaf[name.casefold()] = item
                 container.append(item)
 
         if rootpath is None:
@@ -58,6 +75,7 @@ class PackageItem(DocItem):
                 if not (name == "private" or name.endswith("@")):
                     item = PackageItem(f, rootpath)
                     if item.sz > 0:
+                        self.node[name.casefold()] = item
                         packs.append(item)
             elif f.is_file() and f.suffix == ".m":
                 with f.open("rt") as ff:
@@ -148,12 +166,12 @@ class FileItem(DocItem):
     def scan(self, src: Iterable[str]):
         def strong(m: re.Match):
             if m.group(2) and not self.arguments:
-                self.arguments = m.group(2).lower()
+                self.arguments = m.group(2).casefold()
             nm = self.name
-            item = m.group(0).lower().replace(nm.lower(), nm)
+            item = m.group(0).casefold().replace(nm.casefold(), nm)
             return "".join(("**", item, "**"))
 
-        pattern = rf"(?<!\w)(?:(\w+|\[.*?\])\s*=\s*)?(?:{self.name})(\(.*\))?(?!\w)"
+        pattern = rf"(?<!\w)(?:(\w+|\[.*?\])\s*=\s*)?{self.name}(\(.*\))?(?!\w)"
         # group(0):  full match
         # group(1):  return value
         # group(2):  arguments
@@ -162,7 +180,7 @@ class FileItem(DocItem):
         except StopIteration:
             return
 
-        if "private" in line.lower():
+        if "private" in line.casefold():
             raise TypeError("private files are excluded")
         self.descr = line.replace(self.name.upper(), "").strip()
         yield self.descr
@@ -170,18 +188,20 @@ class FileItem(DocItem):
         for line in src:
             idx = line.find("See also")
             if idx >= 0:
-                self.see_also = [v.lower() for v in re.findall(r"\w+", line[idx + 9 :])]
+                self.see_also = [
+                    v.casefold() for v in re.findall(r"\w+", line[idx + 9 :])
+                ]
             else:
                 yield re.sub(pattern, strong, line, flags=re.I)
 
     def gen(self, file=sys.stdout, builder: type[Builder] = RstBuilder):
         contents = self.contents
         if self.see_also:
-            sa = [builder.role("func", v) for v in self.see_also]
+            sa = [self.target(v, builder) for v in self.see_also]
             contents.append("See also " + ", ".join(sa))
         contents = builder.line_block(contents) if contents else ()
         signature = "".join((self.name, self.arguments))
-        builder.directive("py:function", signature, [], contents, file=file)
+        builder.directive(self.defn, signature, [], contents, file=file)
 
 
 class ScriptItem(FileItem):
@@ -189,13 +209,16 @@ class ScriptItem(FileItem):
 
     pass
 
+
 class ClassItem(FileItem):
     """Representation of a Matlab class"""
 
-    pass
+    role = "class"
+    defn = "py:class"
 
 
 class FunctionItem(FileItem):
     """Representation of a Matlab function"""
 
-    pass
+    role = "func"
+    defn = "py:function"

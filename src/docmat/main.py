@@ -11,11 +11,19 @@ def main():
     source = Path(source).expanduser().resolve()
     rootpath = source / "atmat"
     dest = source / "docs" / "m"
-    doc = PackageItem(rootpath, recursive=False)
-    doc.generate(dest, recursive=False)
-    for module in ["atphysics", "atplot", "attrack", "atutils", "lattice"]:
-        doc = PackageItem(rootpath / module)
-        doc.generate(dest, recursive=True)
+    doc = PackageItem(rootpath, rootpath, recursive=True)
+    doc.subpackages.append(PackageItem(rootpath, recursive=False))
+    package = {p.name: p for p in doc.subpackages}
+    for module in [
+        "atphysics",
+        "atplot",
+        "attrack",
+        "atutils",
+        "lattice",
+        "atmat",
+        "atmatch",
+    ]:
+        package[module].generate(dest, recursive=True)
 
 
 # Press the green button in the gutter to run the script.
