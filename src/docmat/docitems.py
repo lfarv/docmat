@@ -33,7 +33,7 @@ class PackageItem(DocItem):
         return f"{name.replace(' ', '-').casefold()}_module"
 
     @staticmethod
-    def get_lines(f: Iterable[str]) -> Iterable[str]:
+    def get_lines(f: Iterable[str]) -> Iterator[str]:
         for line in f:
             if not line.startswith("%"):
                 break
@@ -98,7 +98,7 @@ class PackageItem(DocItem):
             return
 
     def _store_item(
-        self, container: list, cls: type, name: str, contents: Iterable[str]
+        self, container: list, cls: type, name: str, contents: Iterator[str]
     ) -> None:
         try:
             item = cls(name, contents)
@@ -188,7 +188,7 @@ class FileItem(DocItem):
     role = "obj"
     defn = "py:function"
 
-    def __init__(self, name: str, contents: Iterable[str]):
+    def __init__(self, name: str, contents: Iterator[str]):
         """Initialize FileItem with name and contents.
 
         Args:
@@ -222,7 +222,7 @@ class FileItem(DocItem):
             v.casefold() for v in re.findall(r"\w+", line[start_idx + 9 :])
         ]
 
-    def scan(self, src: Iterable[str]) -> Iterator[str]:
+    def scan(self, src: Iterator[str]) -> Iterator[str]:
         """Scan contents to extract documentation elements."""
 
         def make_strong(match: re.Match) -> str:
@@ -260,9 +260,9 @@ class FileItem(DocItem):
         if self.see_also:
             sa = [self.target(v, builder) for v in self.see_also]
             contents.append(f"See also {', '.join(sa)}")
-        contents = builder.line_block(contents) if contents else ()
+        body = builder.line_block(contents) if contents else ()
         signature = f"{self.name}{self.arguments}"
-        builder.directive(self.defn, signature, [], contents, file=file)
+        builder.directive(self.defn, signature, [], body, file=file)
 
 
 class ScriptItem(FileItem):
