@@ -12,8 +12,8 @@ from .builders import Builder, RstBuilder
 class DocItem:
     """Base class for documentation items"""
 
-    node = {}
-    leaf = {}
+    node: dict[str, PackageItem] = {}
+    leaf: dict[str, FileItem] = {}
 
 
 class PackageItem(DocItem):
@@ -128,12 +128,12 @@ class PackageItem(DocItem):
         self._generate_function_section(file, builder)
         self._generate_items(file, builder)
 
-    def _generate_header(self, file: TextIO, builder: type[Builder]) -> None:
+    def _generate_header(self, file: TextIO | None, builder: type[Builder]) -> None:
         builder.label(self.make_label(self.name), file=file)
         builder.title(self.name, file=file)
 
     def _generate_package_section(
-        self, file: TextIO, recursive: bool, builder: type[Builder]
+        self, file: TextIO | None, recursive: bool, builder: type[Builder]
     ) -> None:
         if recursive and self.subpackages:
             tocitems = [f"{p.id}" for p in self.subpackages]
@@ -145,19 +145,23 @@ class PackageItem(DocItem):
             )
             builder.table(tbl, file=file)
 
-    def _generate_class_section(self, file: TextIO, builder: type[Builder]) -> None:
+    def _generate_class_section(
+        self, file: TextIO | None, builder: type[Builder]
+    ) -> None:
         if self.classes:
             tbl = ((builder.role("class", c.name), c.descr) for c in self.classes)
             builder.directive("rubric", "Classes", [], [], file=file)
             builder.table(tbl, file=file)
 
-    def _generate_function_section(self, file: TextIO, builder: type[Builder]) -> None:
+    def _generate_function_section(
+        self, file: TextIO | None, builder: type[Builder]
+    ) -> None:
         if self.functions:
             tbl = ((builder.role("func", f.name), f.descr) for f in self.functions)
             builder.directive("rubric", "Functions", [], [], file=file)
             builder.table(tbl, file=file)
 
-    def _generate_items(self, file: TextIO, builder: type[Builder]) -> None:
+    def _generate_items(self, file: TextIO | None, builder: type[Builder]) -> None:
         for c in self.classes:
             c.gen(file=file, builder=builder)
         for f in self.functions:
@@ -194,7 +198,7 @@ class FileItem(DocItem):
         self.name = name
         self.arguments = ""
         self.descr = ""
-        self.see_also = []
+        self.see_also: list[str] = []
         self.contents = list(self.scan(contents))
 
     def target(self, name, builder):
