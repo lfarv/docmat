@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import re
-import sys
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from itertools import chain
 from pathlib import Path
 from typing import TextIO
@@ -13,19 +12,8 @@ from .builders import Builder, RstBuilder
 class DocItem:
     """Base class for documentation items"""
 
-    role = "obj"
-    defn = "py:function"
     node = {}
     leaf = {}
-
-    def target(self, name, builder):
-        try:
-            target = self.leaf[name]
-        except KeyError:
-            print(f"Undefined name in {self.name}: {name}")
-            return builder.role("func", name)
-        else:
-            return builder.role(target.role, target.name)
 
 
 class PackageItem(DocItem):
@@ -130,7 +118,7 @@ class PackageItem(DocItem):
 
     def gen(
         self,
-        file=sys.stdout,
+        file: TextIO | None = None,
         recursive: bool = True,
         builder: type[Builder] = RstBuilder,
     ) -> None:
@@ -179,11 +167,11 @@ class PackageItem(DocItem):
         self, dest=None, recursive: bool = True, builder: type[Builder] = RstBuilder
     ) -> None:
         if dest is None:
-            self.gen(sys.stdout, recursive=recursive, builder=builder)
+            self.gen(recursive=recursive, builder=builder)
         else:
             fn = Path(dest) / "api" / "".join((self.id, builder.suffix))
             with fn.open("wt") as f:
-                self.gen(f, recursive=recursive, builder=builder)
+                self.gen(file=f, recursive=recursive, builder=builder)
 
         if recursive:
             for p in self.subpackages:
@@ -191,55 +179,85 @@ class PackageItem(DocItem):
 
 
 class FileItem(DocItem):
-    """Representation of a Matlab file (function, script, class)"""
+    """Representation of a Matlab file (function, script, class)."""
 
     role = "obj"
+    defn = "py:function"
 
     def __init__(self, name: str, contents: Iterable[str]):
+        """Initialize FileItem with name and contents.
+
+        Args:
+            name: Name of the Matlab file
+            contents: Iterable of strings containing file contents
+        """
         self.name = name
         self.arguments = ""
         self.descr = ""
         self.see_also = []
         self.contents = list(self.scan(contents))
 
-    def scan(self, src: Iterable[str]):
-        def strong(m: re.Match):
-            if m.group(2) and not self.arguments:
-                self.arguments = m.group(2).casefold()
-            nm = self.name
-            item = m.group(0).casefold().replace(nm.casefold(), nm)
-            return "".join(("**", item, "**"))
+    def target(self, name, builder):
+        try:
+            target = self.leaf[name]
+        except KeyError:
+            print(f"Undefined name in {self.name}: {name}")
+            return builder.role("func", name)
+        else:
+            return builder.role(target.role, target.name)
 
+    def _process_h1(self, line: str) -> str:
+        """Process the first line of content."""
+        if "private" in line.casefold():
+            raise TypeError("private files are excluded")
+        return line.replace(self.name.upper(), "").strip()
+
+    def _process_see_also(self, line: str, start_idx: int) -> None:
+        """Extract 'see also' references from line."""
+        self.see_also = [
+            v.casefold() for v in re.findall(r"\w+", line[start_idx + 9 :])
+        ]
+
+    def scan(self, src: Iterable[str]) -> Iterator[str]:
+        """Scan contents to extract documentation elements."""
+
+        def make_strong(match: re.Match) -> str:
+            if match.group(2) and not self.arguments:
+                self.arguments = match.group(2).casefold()
+            item = match.group(0).casefold().replace(self.name.casefold(), self.name)
+            return f"**{item}**"
+
+        # regex pattern for matching function declarations.
         pattern = rf"(?<!\w)(?:(\w+|\[.*?\])\s*=\s*)?{self.name}(\(.*\))?(?!\w)"
         # group(0):  full match
         # group(1):  return value
         # group(2):  arguments
+
         try:
-            line = next(src)
+            first_line = next(src)
         except StopIteration:
             return
 
-        if "private" in line.casefold():
-            raise TypeError("private files are excluded")
-        self.descr = line.replace(self.name.upper(), "").strip()
+        self.descr = self._process_h1(first_line)
         yield self.descr
 
         for line in src:
             idx = line.find("See also")
             if idx >= 0:
-                self.see_also = [
-                    v.casefold() for v in re.findall(r"\w+", line[idx + 9 :])
-                ]
+                self._process_see_also(line, idx)
             else:
-                yield re.sub(pattern, strong, line, flags=re.I)
+                yield re.sub(pattern, make_strong, line, flags=re.I)
 
-    def gen(self, file=sys.stdout, builder: type[Builder] = RstBuilder):
+    def gen(
+        self, file: TextIO | None = None, builder: type[Builder] = RstBuilder
+    ) -> None:
+        """Generate documentation output."""
         contents = self.contents
         if self.see_also:
             sa = [self.target(v, builder) for v in self.see_also]
-            contents.append("See also " + ", ".join(sa))
+            contents.append(f"See also {', '.join(sa)}")
         contents = builder.line_block(contents) if contents else ()
-        signature = "".join((self.name, self.arguments))
+        signature = f"{self.name}{self.arguments}"
         builder.directive(self.defn, signature, [], contents, file=file)
 
 
