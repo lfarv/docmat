@@ -20,9 +20,9 @@ class Builder(ABC):
     @abstractmethod
     def directive(
         directive: str,
-        argument: str,
-        options: Iterable[str],
-        contents: Iterable[str],
+        argument: str | None = None,
+        options: Iterable[str] = (),
+        contents: Iterable[str] = (),
         file: TextIO | None = None,
     ) -> None:
         """
@@ -115,9 +115,9 @@ class RstBuilder(Builder):
     @staticmethod
     def directive(
         directive: str,
-        argument: str,
-        options: Iterable[str],
-        contents: Iterable[str],
+        argument: str | None = None,
+        options: Iterable[str] = (),
+        contents: Iterable[str] = (),
         file: TextIO | None = None,
     ) -> None:
         """
@@ -225,9 +225,9 @@ class MystBuilder(Builder):
     @staticmethod
     def directive(
         directive: str,
-        argument: str,
-        options: Iterable[str],
-        contents: Iterable[str],
+        argument: str | None = None,
+        options: Iterable[str] = (),
+        contents: Iterable[str] = (),
         file: TextIO | None = None,
     ) -> None:
         """

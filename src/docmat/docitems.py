@@ -137,14 +137,15 @@ class PackageItem(DocItem):
     def _generate_header(self, file: TextIO | None, builder: type[Builder]) -> None:
         builder.label(self.make_label(self.name), file=file)
         builder.title(self.name, file=file)
+        builder.directive("py:module", self.id, contents=[self.descr], file=file)
 
     def _generate_package_section(
         self, file: TextIO | None, recursive: bool, builder: type[Builder]
     ) -> None:
         if recursive and self.subpackages:
             tocitems = [f"{p.id}" for p in self.subpackages]
-            builder.directive("toctree", "", [":hidden:"], tocitems, file=file)
-            builder.directive("rubric", "Modules", [], [], file=file)
+            builder.directive("toctree", None, [":hidden:"], tocitems, file=file)
+            builder.directive("rubric", "Modules", file=file)
             tbl = (
                 (builder.role("ref", self.make_label(p.name)), p.descr)
                 for p in self.subpackages
@@ -156,7 +157,7 @@ class PackageItem(DocItem):
     ) -> None:
         if self.classes:
             tbl = ((builder.role("class", c.name), c.descr) for c in self.classes)
-            builder.directive("rubric", "Classes", [], [], file=file)
+            builder.directive("rubric", "Classes", file=file)
             builder.table(tbl, file=file)
 
     def _generate_function_section(
@@ -164,7 +165,7 @@ class PackageItem(DocItem):
     ) -> None:
         if self.functions:
             tbl = ((builder.role("func", f.name), f.descr) for f in self.functions)
-            builder.directive("rubric", "Functions", [], [], file=file)
+            builder.directive("rubric", "Functions", file=file)
             builder.table(tbl, file=file)
 
     def _generate_items(self, file: TextIO | None, builder: type[Builder]) -> None:
