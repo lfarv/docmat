@@ -34,6 +34,12 @@ class PackageItem(DocItem):
 
     @staticmethod
     def get_lines(f: Iterable[str]) -> Iterator[str]:
+        # Skip initial lines not starting with % (continuation of function signature)
+        for line in f:
+            if line.startswith("%"):
+                yield line[1:].strip()
+                break
+        # Stop at the end of the docstring
         for line in f:
             if not line.startswith("%"):
                 break
