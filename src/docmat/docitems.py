@@ -221,7 +221,7 @@ class FileItem(DocItem):
         """Process the first line of content."""
         if "private" in line.casefold():
             raise TypeError("private files are excluded")
-        return line.replace(self.name.upper(), "").strip()
+        return re.sub(self.name, "", line, flags=re.IGNORECASE).strip()
 
     def _process_see_also(self, line: str, start_idx: int) -> None:
         """Extract 'see also' references from line."""
